@@ -6089,17 +6089,48 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
 
     } catch (createErr) {
       const errorMsg = createErr.response?.data?.message || createErr.message;
+      const errorDetails = createErr.response?.data || {};
+      
+      // Debug: Log full error for token issues
+      console.log(chalk.gray(`  Debug: ${JSON.stringify(errorDetails, null, 2)}\n`));
       
       if (errorMsg.includes("already exists")) {
         console.log(chalk.yellow(`  ⚠ Repository "${repoName}" already exists\n`));
         console.log(chalk.hex("#7C9EFF")(`  ⠋ Using existing repository...\n`));
-        
+
         const httpsUrlWithToken = `https://${githubToken}@github.com/${githubUsername}/${repoName}.git`;
         execSync(`git remote add origin ${httpsUrlWithToken}`, { stdio: "pipe" });
         remoteUrl = `https://github.com/${githubUsername}/${repoName}.git`;
         console.log(chalk.green(`  ✓ Remote configured: https://github.com/${githubUsername}/${repoName}\n`));
       } else {
-        console.log(chalk.red(`  ❌ Failed to create repository: ${errorMsg}\n`));
+        console.log(
+          chalk.hex(COLORS.borderDark)("╭") +
+          chalk.hex(COLORS.errorStart).bold(" 🔑 Token Permission Issue ") +
+          chalk.hex(COLORS.errorEnd)("─".repeat(bw - 31)) +
+          chalk.hex(COLORS.borderDark)("╮") +
+          "\n" +
+          chalk.hex(COLORS.borderDark)("│") +
+          "  Your GitHub token needs the 'repo' permission.\n" +
+          chalk.hex(COLORS.borderDark)("│") +
+          "  \n" +
+          chalk.hex(COLORS.borderDark)("│") +
+          "  Fix:\n" +
+          chalk.hex(COLORS.borderDark)("│") +
+          "  1. Go to: https://github.com/settings/tokens\n" +
+          chalk.hex(COLORS.borderDark)("│") +
+          "  2. Delete this token and create new one\n" +
+          chalk.hex(COLORS.borderDark)("│") +
+          "  3. Select: 'repo' (Full control of private repositories)\n" +
+          chalk.hex(COLORS.borderDark)("│") +
+          "  4. NOT just 'public_repo' - must be 'repo'\n" +
+          chalk.hex(COLORS.borderDark)("│") +
+          "  5. Update .env with new token\n" +
+          chalk.hex(COLORS.borderDark)("│") +
+          chalk.hex(COLORS.borderDark)("╰") +
+          chalk.hex(COLORS.errorEnd)("─".repeat(bw)) +
+          chalk.hex(COLORS.borderDark)("╯") +
+          "\n"
+        );
         return;
       }
     }
