@@ -6139,14 +6139,22 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
   // Step 6: Push to GitHub
   console.log(chalk.gray("  Pushing to GitHub...\n"));
   console.log(chalk.hex("#7C9EFF")("  ⠋ Pushing... please wait\n"));
-  
+
+  // Detect current branch name
+  let currentBranch = "main";
   try {
-    const pushOutput = execSync("git push -u origin main 2>&1", { 
+    currentBranch = execSync("git rev-parse --abbrev-ref HEAD", { encoding: "utf8", stdio: "pipe" }).trim();
+  } catch (e) {
+    currentBranch = "main";
+  }
+
+  try {
+    const pushOutput = execSync(`git push -u origin ${currentBranch} 2>&1`, {
       encoding: "utf8",
       timeout: 180000,
       stdio: "pipe"
     });
-    
+
     console.log(chalk.green("  ✓ Successfully pushed to GitHub!\n"));
     if (pushOutput) {
       console.log(chalk.gray(`  ${pushOutput.slice(0, 300)}\n`));
