@@ -1,0 +1,107 @@
+import Header from '../components/Header';
+import Testimonial from '../components/Testimonial';
+import Link from 'next/link';
+
+export default function Home() {
+  const heroBg = 'https://picsum.photos/seed/lifestyle-0/800/600';
+  const categories = [
+    { name: 'Watches', img: 'https://picsum.photos/seed/modern-1/800/600' },
+    { name: 'Accessories', img: 'https://picsum.photos/seed/beautiful-2/800/600' },
+    { name: 'Gift Sets', img: 'https://picsum.photos/seed/professional-3/800/600' },
+  ];
+  const featured = [
+    'https://picsum.photos/seed/quality-4/800/600',
+    'https://picsum.photos/seed/lifestyle-0/800/600',
+    'https://picsum.photos/seed/modern-1/800/600',
+  ];
+
+  return (
+    <main className="min-h-screen bg-gray-50 flex flex-col">
+      <Header />
+
+      {/* Hero */}
+      <section
+        className="h-[70vh] bg-cover bg-center flex items-center justify-center"
+        style={{ backgroundImage: `url(${heroBg})` }}
+      >
+        <div className="bg-black bg-opacity-60 p-8 rounded">
+          <h1 className="text-5xl font-bold text-white mb-4 text-center">
+            Premium Watches for Every Occasion
+          </h1>
+          <p className="text-lg text-white text-center mb-6">
+            Shop our exclusive collection and enjoy free worldwide shipping.
+          </p>
+          <div className="flex justify-center">
+            <a
+              href="#products"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded transition"
+            >
+              Explore Store
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* Categories */}
+      <section className="py-12 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <h2 className="text-3xl font-bold text-gray-900 mb-8 text-center">
+            Shop by Category
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            {categories.map((cat) => (
+              <a
+                key={cat.name}
+                href="#products"
+                className="group block rounded-lg overflow-hidden shadow hover:shadow-lg transition"
+              >
+                <img
+                  src={cat.img}
+                  alt={cat.name}
+                  className="w-full h-48 object-cover group-hover:scale-105 transition"
+                />
+                <div className="p-4 text-center">
+                  <h3 className="text-xl font-semibold text-gray-800">{cat.name}</h3>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Featured Products */}
+      <section id="products" className="py-12 bg-gray-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <h2 className="text-3xl font-bold text-gray-900 mb-8 text-center">
+            Featured Products
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+            {featured.map((img, idx) => (
+              <Link key={idx} href={`/product/${idx + 1}`} className="group block bg-white rounded-lg shadow overflow-hidden hover:shadow-lg transition">
+                <img src={img} alt={`Featured ${idx + 1}`} className="w-full h-64 object-cover group-hover:scale-105 transition" />
+                <div className="p-4">
+                  <h3 className="text-xl font-semibold text-gray-800">Luxury Watch {idx + 1}</h3>
+                  <p className="mt-2 text-gray-600">Elegant design with premium leather strap.</p>
+                  <p className="mt-4 text-indigo-600 font-bold">$199.00</p>
+                  <button className="mt-4 w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700 transition">
+                    Add to Cart
+                  </button>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <Testimonial />
+
+      <footer className="bg-white py-8 mt-auto">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <p className="text-gray-600">
+            © {new Date().getFullYear()} Premium Watch Store. All rights reserved.
+          </p>
+        </div>
+      </footer>
+    </main>
+  );
+}
