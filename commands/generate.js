@@ -6203,28 +6203,30 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
 
       let allOutput = "";
       let allError = "";
+      let lastProgressLine = "";
 
       pushChild.stdout.on("data", (data) => {
         const text = data.toString();
         allOutput += text;
-        // Show git's real output line by line
-        text.split("\n").filter(l => l.trim()).forEach(line => {
-          console.log(chalk.hex("#7C9EFF")("  │") + " " + chalk.cyan(line));
-        });
       });
 
       pushChild.stderr.on("data", (data) => {
         const text = data.toString();
         allError += text;
-        // Show git's real progress from stderr
-        text.split("\n").filter(l => l.trim()).forEach(line => {
-          // Parse git progress: "Writing objects:  50% (45/91), 1.23 MiB | 123.00 KiB/s"
-          if (line.includes("%") || line.includes("Counting") || line.includes("Compressing") || line.includes("Writing") || line.includes("Total")) {
-            console.log(chalk.hex("#7C9EFF")("  │") + " " + chalk.green(line));
-          } else {
-            console.log(chalk.hex("#7C9EFF")("  │") + " " + chalk.yellow(line));
+        
+        // Only show progress lines, update in place
+        const lines = text.split("\n").filter(l => l.trim());
+        for (const line of lines) {
+          // Only track progress lines with percentages or key info
+          if (line.includes("%") || line.includes("done.") || line.includes("POST") || line.includes("Total") || line.includes("Delta") || line.includes("remote:")) {
+            lastProgressLine = line;
+            // Clear line and update
+            process.stdout.write("\r" + chalk.hex("#7C9EFF")("  │") + " " + chalk.green(line.padEnd(bw - 5)));
+          } else if (line.includes("To ") || line.includes("Branch '")) {
+            // Show final info lines
+            process.stdout.write("\n" + chalk.hex("#7C9EFF")("  │") + " " + chalk.cyan(line));
           }
-        });
+        }
       });
 
       // Wait for push to complete
@@ -6237,14 +6239,18 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
         pushChild.on("close", (code) => {
           clearTimeout(timeout);
           if (code === 0) {
+            // Show final newline
+            process.stdout.write("\n");
             resolve();
           } else {
+            process.stdout.write("\n");
             reject(new Error(`git push exited with code ${code}`));
           }
         });
 
         pushChild.on("error", (err) => {
           clearTimeout(timeout);
+          process.stdout.write("\n");
           reject(err);
         });
       });
