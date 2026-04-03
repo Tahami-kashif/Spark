@@ -6001,17 +6001,99 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
     }
   }
   
-  // Step 5: Create GitHub repository and set remote
-  console.log(chalk.gray("  Setting up GitHub repository...\n"));
+  // Step 5: Check if GitHub repository exists and set remote
+  console.log(chalk.gray("  Checking GitHub repository...\n"));
   let remoteUrl = null;
   let githubToken = process.env.GITHUB_TOKEN;
+  let githubUsername = null;
+  let repoExists = false;
 
   // Check if remote already exists
   try {
     remoteUrl = execSync("git remote get-url origin", { encoding: "utf8", stdio: "pipe" }).trim();
-    console.log(chalk.green(`  ✓ Remote already configured: ${remoteUrl.slice(0, 60)}...\n`));
+    console.log(chalk.gray(`  ✓ Remote configured: ${remoteUrl.slice(0, 60)}...\n`));
+    
+    // Extract username/repo from remote URL
+    const urlMatch = remoteUrl.match(/github\.com[:\/]([^\/]+)\/([^.]+)\.git/);
+    if (urlMatch) {
+      githubUsername = urlMatch[1];
+      const existingRepoName = urlMatch[2];
+      
+      // Check if repo exists on GitHub
+      try {
+        const checkResponse = await axios.get(
+          `https://api.github.com/repos/${githubUsername}/${existingRepoName}`,
+          {
+            headers: {
+              "Authorization": `token ${githubToken}`,
+              "Accept": "application/vnd.github.v3+json",
+              "User-Agent": "Spark-AI-CLI"
+            },
+            timeout: 10000
+          }
+        );
+        
+        repoExists = true;
+        console.log(
+          chalk.hex(COLORS.borderDark)("╭") +
+          chalk.hex(COLORS.infoStart).bold(" 📦 Repository Found ") +
+          chalk.hex(COLORS.infoEnd)("─".repeat(bw - 22)) +
+          chalk.hex(COLORS.borderDark)("╮") +
+          "\n" +
+          chalk.hex(COLORS.borderDark)("│") +
+          `  Repository: ${checkResponse.data.full_name}\n` +
+          chalk.hex(COLORS.borderDark)("│") +
+          `  URL: ${checkResponse.data.html_url}\n` +
+          chalk.hex(COLORS.borderDark)("│") +
+          `  Created: ${new Date(checkResponse.data.created_at).toLocaleDateString()}\n` +
+          chalk.hex(COLORS.borderDark)("│") +
+          chalk.hex(COLORS.borderDark)("╰") +
+          chalk.hex(COLORS.infoEnd)("─".repeat(bw)) +
+          chalk.hex(COLORS.borderDark)("╯") +
+          "\n"
+        );
+        
+        // Ask user if they want to push to this repo
+        const { confirmPush } = await inquirer.prompt([
+          {
+            type: 'confirm',
+            name: 'confirmPush',
+            message: `Push to ${checkResponse.data.full_name}?`,
+            default: true
+          }
+        ]);
+        
+        if (!confirmPush) {
+          console.log(chalk.yellow("  ⚠ Push cancelled. Create a new repository instead.\n"));
+          // Fall through to create new repo
+          repoExists = false;
+          remoteUrl = null;
+          execSync("git remote remove origin", { stdio: "pipe" });
+        }
+      } catch (checkErr) {
+        if (checkErr.response?.status === 404) {
+          console.log(chalk.yellow(`  ⚠ Repository "${existingRepoName}" not found on GitHub (deleted or private)\n`));
+          repoExists = false;
+          remoteUrl = null;
+          try {
+            execSync("git remote remove origin", { stdio: "pipe" });
+          } catch (e) {}
+        } else {
+          console.log(chalk.yellow(`  ⚠ Could not verify repository: ${checkErr.message}\n`));
+          repoExists = false;
+          remoteUrl = null;
+          try {
+            execSync("git remote remove origin", { stdio: "pipe" });
+          } catch (e) {}
+        }
+      }
+    }
   } catch (e) {
-    // No remote - create GitHub repo automatically
+    console.log(chalk.gray("  No remote configured\n"));
+  }
+
+  // Create new GitHub repository if needed
+  if (!repoExists) {
     if (!githubToken) {
       console.log(
         chalk.hex(COLORS.borderDark)("╭") +
@@ -6036,10 +6118,9 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
       return;
     }
 
-    // Get GitHub username first
+    // Get GitHub username
     console.log(chalk.hex("#7C9EFF")(`  ⠋ Fetching GitHub user info...\n`));
-    let githubUsername = null;
-    
+
     try {
       const userResponse = await axios.get("https://api.github.com/user", {
         headers: {
@@ -6056,16 +6137,31 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
       return;
     }
 
-    // Create GitHub repository via API
-    console.log(chalk.hex("#7C9EFF")(`  ⠋ Creating repository "${repoName}" on GitHub...\n`));
+    // Ask for repository name
+    const { newRepoName } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'newRepoName',
+        message: 'Enter repository name to create:',
+        default: path.basename(process.cwd()),
+        validate: (input) => {
+          if (!input || input.trim().length === 0) return 'Repository name is required';
+          if (!/^[a-zA-Z0-9_-]+$/.test(input)) return 'Only letters, numbers, hyphens, and underscores allowed';
+          return true;
+        }
+      }
+    ]);
+
+    const finalRepoName = newRepoName.trim();
+    console.log(chalk.hex("#7C9EFF")(`  ⠋ Creating repository "${finalRepoName}" on GitHub...\n`));
 
     try {
       const createResponse = await axios.post(
         "https://api.github.com/user/repos",
         {
-          name: repoName,
+          name: finalRepoName,
           private: false,
-          auto_init: false,
+          auto_init: true,
           description: "Created by Spark AI CLI"
         },
         {
@@ -6079,29 +6175,25 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
       );
 
       remoteUrl = createResponse.data.html_url + ".git";
-      
+
       console.log(chalk.green(`  ✓ Repository created: ${createResponse.data.html_url}\n`));
 
       // Add remote (use HTTPS with token for seamless auth)
-      const httpsUrlWithToken = `https://${githubToken}@github.com/${githubUsername}/${repoName}.git`;
+      const httpsUrlWithToken = `https://${githubToken}@github.com/${githubUsername}/${finalRepoName}.git`;
       execSync(`git remote add origin ${httpsUrlWithToken}`, { stdio: "pipe" });
       console.log(chalk.green(`  ✓ Remote configured\n`));
 
     } catch (createErr) {
       const errorMsg = createErr.response?.data?.message || createErr.message;
-      const errorDetails = createErr.response?.data || {};
-      
-      // Debug: Log full error for token issues
-      console.log(chalk.gray(`  Debug: ${JSON.stringify(errorDetails, null, 2)}\n`));
-      
+
       if (errorMsg.includes("already exists")) {
-        console.log(chalk.yellow(`  ⚠ Repository "${repoName}" already exists\n`));
+        console.log(chalk.yellow(`  ⚠ Repository "${finalRepoName}" already exists\n`));
         console.log(chalk.hex("#7C9EFF")(`  ⠋ Using existing repository...\n`));
 
-        const httpsUrlWithToken = `https://${githubToken}@github.com/${githubUsername}/${repoName}.git`;
+        const httpsUrlWithToken = `https://${githubToken}@github.com/${githubUsername}/${finalRepoName}.git`;
         execSync(`git remote add origin ${httpsUrlWithToken}`, { stdio: "pipe" });
-        remoteUrl = `https://github.com/${githubUsername}/${repoName}.git`;
-        console.log(chalk.green(`  ✓ Remote configured: https://github.com/${githubUsername}/${repoName}\n`));
+        remoteUrl = `https://github.com/${githubUsername}/${finalRepoName}.git`;
+        console.log(chalk.green(`  ✓ Remote configured: https://github.com/${githubUsername}/${finalRepoName}\n`));
       } else {
         console.log(
           chalk.hex(COLORS.borderDark)("╭") +
