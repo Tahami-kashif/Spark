@@ -6203,33 +6203,25 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
 
       let allOutput = "";
       let allError = "";
+      let summaryLines = [];
 
       pushChild.stdout.on("data", (data) => {
         const text = data.toString();
         allOutput += text;
-        // Show all stdout lines
-        text.split("\n").filter(l => l.trim()).forEach(line => {
-          process.stdout.write(chalk.hex("#7C9EFF")("  │") + " " + chalk.cyan(line) + "\n");
-        });
       });
 
       pushChild.stderr.on("data", (data) => {
         const text = data.toString();
         allError += text;
         
-        // Show all stderr (progress) lines - this is where git shows real progress
+        // Collect all progress lines
         const lines = text.split("\n").filter(l => l.trim());
         for (const line of lines) {
-          // Show all progress lines clearly
-          if (line.includes("%")) {
-            // Progress lines with percentage - show in green
-            process.stdout.write(chalk.hex("#7C9EFF")("  │") + " " + chalk.green(line) + "\n");
-          } else if (line.includes("done.") || line.includes("POST") || line.includes("Total") || line.includes("Delta") || line.includes("remote:")) {
-            // Important info lines - show in cyan
-            process.stdout.write(chalk.hex("#7C9EFF")("  │") + " " + chalk.cyan(line) + "\n");
-          } else {
-            // Other lines - show in yellow
-            process.stdout.write(chalk.hex("#7C9EFF")("  │") + " " + chalk.yellow(line) + "\n");
+          // Only keep "done" lines and key info
+          if (line.includes("done.") && !line.includes("0%")) {
+            summaryLines.push(line);
+          } else if (line.includes("Total") || line.includes("Delta compression") || line.includes("remote:") || line.includes("To ") || line.includes("Branch '")) {
+            summaryLines.push(line);
           }
         }
       });
@@ -6244,26 +6236,37 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
         pushChild.on("close", (code) => {
           clearTimeout(timeout);
           if (code === 0) {
-            // Show final newline
-            process.stdout.write("\n");
             resolve();
           } else {
-            process.stdout.write("\n");
             reject(new Error(`git push exited with code ${code}`));
           }
         });
 
         pushChild.on("error", (err) => {
           clearTimeout(timeout);
-          process.stdout.write("\n");
           reject(err);
         });
       });
 
-      const pushDuration = ((Date.now() - pushStartTime) / 1000).toFixed(2);
-      console.log(chalk.hex("#7C9EFF")("  └" + "─".repeat(bw - 1) + "┘\n"));
+      // Display clean summary box
+      console.log(chalk.hex("#7C9EFF")("\n  ┌─ Git Push Progress " + "─".repeat(bw - 22) + "┐"));
       
-      console.log(chalk.green("  ✓ Successfully pushed to GitHub!\n"));
+      // Show collected summary lines with line numbers
+      summaryLines.forEach((line, idx) => {
+        const lineNum = String(idx + 1).padStart(4);
+        // Color based on line type
+        if (line.includes("Counting") || line.includes("done.")) {
+          console.log(chalk.hex("#7C9EFF")(`  ${lineNum} │`) + " " + chalk.green(line));
+        } else if (line.includes("Writing") || line.includes("Total")) {
+          console.log(chalk.hex("#7C9EFF")(`  ${lineNum} │`) + " " + chalk.cyan(line));
+        } else if (line.includes("remote:")) {
+          console.log(chalk.hex("#7C9EFF")(`  ${lineNum} │`) + " " + chalk.yellow(line));
+        } else {
+          console.log(chalk.hex("#7C9EFF")(`  ${lineNum} │`) + " " + chalk.white(line));
+        }
+      });
+      
+      console.log(chalk.hex("#7C9EFF")("  " + "─".repeat(bw - 1) + "┘\n"));
     
     // Show detailed statistics
     console.log(
