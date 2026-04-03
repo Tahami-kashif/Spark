@@ -6175,26 +6175,6 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
     color: "cyan"
   }).start();
 
-  // Progress animation stages
-  const progressStages = [
-    "Counting objects...",
-    "Compressing objects...",
-    "Writing objects...",
-    "Sending pack data...",
-    "Uploading to GitHub...",
-    "Finalizing packfile...",
-    "Updating references...",
-    "Almost done..."
-  ];
-  let stageIndex = 0;
-
-  // Animate progress stages
-  const progressInterval = setInterval(() => {
-    stageIndex = (stageIndex + 1) % progressStages.length;
-    const dots = ".".repeat((stageIndex % 3) + 1);
-    spinner.text = chalk.hex("#7C9EFF")(`${progressStages[stageIndex]}${dots}`);
-  }, 2000);
-
   try {
     // Get commit count
     let commitCount = 0;
@@ -6207,22 +6187,75 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
 
     spinner.text = chalk.hex("#7C9EFF")(`Pushing ${commitCount} commit(s) to ${currentBranch}...`);
     
-    // Execute push and capture full output
+    // Execute push with progress output piped directly to console
     const pushStartTime = Date.now();
     
     try {
-      const pushOutput = execSync(`git push -u origin ${currentBranch} 2>&1`, {
-        encoding: "utf8",
-        timeout: 180000,
-        stdio: "pipe",
-        maxBuffer: 10 * 1024 * 1024 // 10MB buffer
+      // Use execSync with inherit stdio to show REAL git progress
+      spinner.stop();
+      console.log(chalk.hex("#7C9EFF")("\n  ┌─ Git Push Progress " + "─".repeat(bw - 22) + "┐"));
+      
+      // Run git push and show real-time progress
+      const { execSync: execSyncReal } = require("child_process");
+      
+      // We need to use spawn to capture output AND show it
+      const pushChild = spawn("git", ["push", "-u", "origin", currentBranch, "--progress", "-v"], {
+        stdio: ["inherit", "pipe", "pipe"],
+        env: { ...process.env, GIT_PROGRESS: "1" }
       });
 
-      clearInterval(progressInterval);
-      const pushDuration = ((Date.now() - pushStartTime) / 1000).toFixed(2);
-      spinner.succeed(chalk.green("Push complete!"));
+      let allOutput = "";
+      let allError = "";
 
-      console.log(chalk.green("\n  ✓ Successfully pushed to GitHub!\n"));
+      pushChild.stdout.on("data", (data) => {
+        const text = data.toString();
+        allOutput += text;
+        // Show git's real output line by line
+        text.split("\n").filter(l => l.trim()).forEach(line => {
+          console.log(chalk.hex("#7C9EFF")("  │") + " " + chalk.cyan(line));
+        });
+      });
+
+      pushChild.stderr.on("data", (data) => {
+        const text = data.toString();
+        allError += text;
+        // Show git's real progress from stderr
+        text.split("\n").filter(l => l.trim()).forEach(line => {
+          // Parse git progress: "Writing objects:  50% (45/91), 1.23 MiB | 123.00 KiB/s"
+          if (line.includes("%") || line.includes("Counting") || line.includes("Compressing") || line.includes("Writing") || line.includes("Total")) {
+            console.log(chalk.hex("#7C9EFF")("  │") + " " + chalk.green(line));
+          } else {
+            console.log(chalk.hex("#7C9EFF")("  │") + " " + chalk.yellow(line));
+          }
+        });
+      });
+
+      // Wait for push to complete
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          pushChild.kill();
+          reject(new Error("Push timed out after 180 seconds"));
+        }, 180000);
+
+        pushChild.on("close", (code) => {
+          clearTimeout(timeout);
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`git push exited with code ${code}`));
+          }
+        });
+
+        pushChild.on("error", (err) => {
+          clearTimeout(timeout);
+          reject(err);
+        });
+      });
+
+      const pushDuration = ((Date.now() - pushStartTime) / 1000).toFixed(2);
+      console.log(chalk.hex("#7C9EFF")("  └" + "─".repeat(bw - 1) + "┘\n"));
+      
+      console.log(chalk.green("  ✓ Successfully pushed to GitHub!\n"));
     
     // Show detailed statistics
     console.log(
@@ -6268,11 +6301,10 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
 
   } catch (innerErr) {
     // Push failed - show detailed error
-    clearInterval(progressInterval);
-    spinner.fail(chalk.red("Push failed!"));
-    
     const fullError = innerErr.message || innerErr.stdout || innerErr.stderr || "";
     const errorLines = fullError.split("\n").filter(l => l.trim());
+    
+    console.log(chalk.hex("#7C9EFF")("  └" + "─".repeat(bw - 1) + "┘\n"));
     
     console.log(
       chalk.hex(COLORS.borderDark)("╭") +
@@ -6282,8 +6314,8 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
       "\n"
     );
     
-    // Show last 10 lines of error
-    const recentErrors = errorLines.slice(-10);
+    // Show last 15 lines of actual git error
+    const recentErrors = errorLines.slice(-15);
     for (const line of recentErrors) {
       console.log(chalk.hex(COLORS.borderDark)("│") + `  ${chalk.red(line)}`);
     }
@@ -6309,6 +6341,8 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
       console.log(chalk.yellow("  💡 Tip: Authentication failed. Check your token/credentials.\n"));
     } else if (fullError.includes("Could not resolve") || fullError.includes("not found")) {
       console.log(chalk.yellow("  💡 Tip: Remote repository URL may be incorrect.\n"));
+    } else if (fullError.includes("failed to push")) {
+      console.log(chalk.yellow("  💡 Tip: Try pulling first: git pull origin " + currentBranch + " --rebase\n"));
     }
   }
 
