@@ -6193,8 +6193,7 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
     try {
       // Use spawn to show real git progress
       spinner.stop();
-      console.log(chalk.hex("#7C9EFF")("\n  ┌─ Git Push Progress " + "─".repeat(bw - 22) + "┐"));
-      
+
       // Run git push and show real-time progress
       const pushChild = spawn("git", ["push", "-u", "origin", currentBranch, "--progress", "-v"], {
         stdio: ["inherit", "pipe", "pipe"],
@@ -6213,7 +6212,7 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
       pushChild.stderr.on("data", (data) => {
         const text = data.toString();
         allError += text;
-        
+
         // Collect all progress lines
         const lines = text.split("\n").filter(l => l.trim());
         for (const line of lines) {
@@ -6248,8 +6247,9 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
         });
       });
 
-      // Display clean summary box
-      console.log(chalk.hex("#7C9EFF")("\n  ┌─ Git Push Progress " + "─".repeat(bw - 22) + "┐"));
+      // Display clean summary box with proper spacing
+      console.log("");
+      console.log(chalk.hex("#7C9EFF")("  ┌─ Git Push Progress " + "─".repeat(bw - 22) + "┐"));
       
       // Show collected summary lines with line numbers
       summaryLines.forEach((line, idx) => {
@@ -6266,7 +6266,8 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
         }
       });
       
-      console.log(chalk.hex("#7C9EFF")("  " + "─".repeat(bw - 1) + "┘\n"));
+      console.log(chalk.hex("#7C9EFF")("  " + "─".repeat(bw - 1) + "┘"));
+      console.log("");
     
     // Show detailed statistics
     console.log(
