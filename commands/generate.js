@@ -6138,8 +6138,7 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
   
   // Step 6: Push to GitHub
   console.log(chalk.gray("  Pushing to GitHub...\n"));
-  console.log(chalk.hex("#7C9EFF")("  ⠋ Pushing... please wait\n"));
-
+  
   // Detect current branch name
   let currentBranch = "main";
   try {
@@ -6148,18 +6147,141 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
     currentBranch = "main";
   }
 
+  // Count files being pushed
+  let fileCount = 0;
+  let totalSize = 0;
   try {
-    const pushOutput = execSync(`git push -u origin ${currentBranch} 2>&1`, {
-      encoding: "utf8",
-      timeout: 180000,
-      stdio: "pipe"
+    const gitStatus = execSync("git status --porcelain", { encoding: "utf8", stdio: "pipe" });
+    const files = gitStatus.trim().split("\n").filter(f => f.trim());
+    fileCount = files.length;
+    
+    // Calculate total size
+    for (const fileLine of files) {
+      const filePath = fileLine.slice(3).trim();
+      try {
+        const stats = fs.statSync(filePath);
+        totalSize += stats.size;
+      } catch {}
+    }
+  } catch {}
+
+  // Show what's being pushed
+  console.log(chalk.cyan(`  📦 Preparing ${fileCount} files (${(totalSize / 1024).toFixed(2)} KB)...\n`));
+  
+  // Create progress spinner
+  const spinner = ora({
+    text: chalk.hex("#7C9EFF")("Initializing push..."),
+    spinner: "dots",
+    color: "cyan"
+  }).start();
+
+  try {
+    // Get commit count
+    let commitCount = 0;
+    try {
+      const logOutput = execSync(`git log origin/${currentBranch}..HEAD --oneline 2>&1`, { encoding: "utf8", stdio: "pipe" });
+      commitCount = logOutput.trim().split("\n").filter(l => l.trim()).length;
+    } catch {
+      commitCount = 1;
+    }
+
+    spinner.text = chalk.hex("#7C9EFF")(`Pushing ${commitCount} commit(s) to ${currentBranch}...`);
+    
+    // Execute push with verbose output to track progress
+    const pushStartTime = Date.now();
+    const pushProcess = spawn("git", ["push", "-u", "origin", currentBranch, "--progress"], {
+      stdio: ["pipe", "pipe", "pipe"]
     });
 
-    console.log(chalk.green("  ✓ Successfully pushed to GitHub!\n"));
-    if (pushOutput) {
-      console.log(chalk.gray(`  ${pushOutput.slice(0, 300)}\n`));
-    }
+    let pushStdout = "";
+    let pushStderr = "";
+    let objectsCount = 0;
+    let bytesSent = 0;
+
+    pushProcess.stdout.on("data", (data) => {
+      const output = data.toString();
+      pushStdout += output;
+      
+      // Parse progress from git output
+      if (output.includes("Writing objects")) {
+        const match = output.match(/(\d+)%/);
+        if (match) {
+          const percent = match[1];
+          spinner.text = chalk.hex("#7C9EFF")(`Uploading: ${percent}% complete`);
+        }
+      }
+    });
+
+    pushProcess.stderr.on("data", (data) => {
+      const output = data.toString();
+      pushStderr += output;
+      
+      // Count objects being pushed
+      const objectMatch = output.match(/Counting objects:\s*(\d+)/);
+      if (objectMatch) {
+        objectsCount = parseInt(objectMatch[1]);
+        spinner.text = chalk.hex("#7C9EFF")(`Processing ${objectsCount} objects...`);
+      }
+      
+      // Track bytes if available
+      const bytesMatch = output.match(/(\d+)\s+bytes/);
+      if (bytesMatch) {
+        bytesSent = parseInt(bytesMatch[1]);
+        spinner.text = chalk.hex("#7C9EFF")(`Sent ${(bytesSent / 1024).toFixed(2)} KB...`);
+      }
+    });
+
+    // Wait for push to complete with timeout
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        pushProcess.kill();
+        reject(new Error("Push timed out after 180 seconds"));
+      }, 180000);
+
+      pushProcess.on("close", (code) => {
+        clearTimeout(timeout);
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`git push exited with code ${code}`));
+        }
+      });
+
+      pushProcess.on("error", (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+    });
+
+    const pushDuration = ((Date.now() - pushStartTime) / 1000).toFixed(2);
+    spinner.succeed(chalk.green("Push complete!"));
+
+    console.log(chalk.green("\n  ✓ Successfully pushed to GitHub!\n"));
     
+    // Show detailed statistics
+    console.log(
+      chalk.hex(COLORS.borderDark)("╭") +
+      chalk.hex(COLORS.successStart).bold(" 📊 Push Statistics ") +
+      chalk.hex(COLORS.successEnd)("─".repeat(bw - 21)) +
+      chalk.hex(COLORS.borderDark)("╮") +
+      "\n" +
+      chalk.hex(COLORS.borderDark)("│") +
+      `  Files: ${fileCount}\n` +
+      chalk.hex(COLORS.borderDark)("│") +
+      `  Size: ${(totalSize / 1024).toFixed(2)} KB (${totalSize} bytes)\n` +
+      chalk.hex(COLORS.borderDark)("│") +
+      `  Commits: ${commitCount}\n` +
+      chalk.hex(COLORS.borderDark)("│") +
+      `  Duration: ${pushDuration}s\n` +
+      chalk.hex(COLORS.borderDark)("│") +
+      `  Branch: ${currentBranch}\n` +
+      chalk.hex(COLORS.borderDark)("│") +
+      chalk.hex(COLORS.borderDark)("╰") +
+      chalk.hex(COLORS.successEnd)("─".repeat(bw)) +
+      chalk.hex(COLORS.borderDark)("╯") +
+      "\n"
+    );
+
     // Show success box
     console.log(
       chalk.hex(COLORS.borderDark)("╭") +
@@ -6177,7 +6299,7 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
       chalk.hex(COLORS.borderDark)("╯") +
       "\n"
     );
-    
+
   } catch (pushErr) {
     const pushMsg = pushErr.message || pushErr.stdout || "";
     
