@@ -6191,14 +6191,11 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
     const pushStartTime = Date.now();
     
     try {
-      // Use execSync with inherit stdio to show REAL git progress
+      // Use spawn to show real git progress
       spinner.stop();
       console.log(chalk.hex("#7C9EFF")("\n  ┌─ Git Push Progress " + "─".repeat(bw - 22) + "┐"));
       
       // Run git push and show real-time progress
-      const { execSync: execSyncReal } = require("child_process");
-      
-      // We need to use spawn to capture output AND show it
       const pushChild = spawn("git", ["push", "-u", "origin", currentBranch, "--progress", "-v"], {
         stdio: ["inherit", "pipe", "pipe"],
         env: { ...process.env, GIT_PROGRESS: "1" }
