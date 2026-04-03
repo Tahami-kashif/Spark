@@ -6202,42 +6202,99 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
 
       let allOutput = "";
       let allError = "";
-      let lineCounter = 0;
+      let currentProgress = "";
+      let phase = "Counting";
+      let objectsDone = 0;
+      let objectsTotal = 0;
+      let bytesTransferred = "";
+      let speed = "";
 
       // Show box header BEFORE push starts
       console.log("");
       console.log(chalk.hex("#7C9EFF")("  ┌─ Git Push Progress " + "─".repeat(bw - 22) + "┐"));
+      console.log(chalk.hex("#7C9EFF")("  │") + " ".repeat(bw - 4) + chalk.hex("#7C9EFF")("│"));
+
+      // Function to update progress line in place
+      const updateProgress = () => {
+        if (objectsTotal > 0) {
+          const percent = Math.round((objectsDone / objectsTotal) * 100);
+          const barWidth = 40;
+          const filled = Math.round((percent / 100) * barWidth);
+          const empty = barWidth - filled;
+          const bar = "█".repeat(filled) + "░".repeat(empty);
+          
+          const progressLine = ` ${phase}: ${percent}% (${objectsDone}/${objectsTotal}) ${bar} ${bytesTransferred} ${speed}`;
+          // Move cursor up 2 lines, clear, rewrite
+          process.stdout.write("\x1b[2A");
+          process.stdout.write("\x1b[2K");
+          process.stdout.write(chalk.hex("#7C9EFF")("  │") + " " + chalk.green(progressLine) + "\n");
+          process.stdout.write(chalk.hex("#7C9EFF")("  │") + " ".repeat(bw - 4) + chalk.hex("#7C9EFF")("│"));
+        }
+      };
 
       pushChild.stdout.on("data", (data) => {
         const text = data.toString();
         allOutput += text;
-        // Show stdout lines in real-time
-        text.split("\n").filter(l => l.trim()).forEach(line => {
-          lineCounter++;
-          const lineNum = String(lineCounter).padStart(4);
-          console.log(chalk.hex("#7C9EFF")(`  ${lineNum} │`) + " " + chalk.white(line));
-        });
       });
 
       pushChild.stderr.on("data", (data) => {
         const text = data.toString();
         allError += text;
 
-        // Show stderr lines in real-time
+        // Parse git progress and update in place
         const lines = text.split("\n").filter(l => l.trim());
         for (const line of lines) {
-          lineCounter++;
-          const lineNum = String(lineCounter).padStart(4);
-          
-          // Color based on line type
-          if (line.includes("done.") || line.includes("Total") || line.includes("remote:") || line.includes("Branch '")) {
-            console.log(chalk.hex("#7C9EFF")(`  ${lineNum} │`) + " " + chalk.green(line));
-          } else if (line.includes("%")) {
-            console.log(chalk.hex("#7C9EFF")(`  ${lineNum} │`) + " " + chalk.cyan(line));
-          } else if (line.includes("POST") || line.includes("Delta")) {
-            console.log(chalk.hex("#7C9EFF")(`  ${lineNum} │`) + " " + chalk.yellow(line));
-          } else {
-            console.log(chalk.hex("#7C9EFF")(`  ${lineNum} │`) + " " + chalk.gray(line));
+          // Detect phase
+          if (line.includes("Counting objects:")) {
+            phase = "Counting";
+            const match = line.match(/Counting objects:\s+\d+%\s+\((\d+)\/(\d+)\)/);
+            if (match) {
+              objectsDone = parseInt(match[1]);
+              objectsTotal = parseInt(match[2]);
+              updateProgress();
+            }
+          } else if (line.includes("Compressing objects:")) {
+            phase = "Compressing";
+            const match = line.match(/Compressing objects:\s+\d+%\s+\((\d+)\/(\d+)\)/);
+            if (match) {
+              objectsDone = parseInt(match[1]);
+              objectsTotal = parseInt(match[2]);
+              updateProgress();
+            }
+          } else if (line.includes("Writing objects:")) {
+            phase = "Writing";
+            const match = line.match(/Writing objects:\s+\d+%\s+\((\d+)\/(\d+)\)/);
+            if (match) {
+              objectsDone = parseInt(match[1]);
+              objectsTotal = parseInt(match[2]);
+            }
+            // Extract bytes and speed
+            const bytesMatch = line.match(/(\d+[\.\d]*\s*[KMGT]?i?B)/);
+            const speedMatch = line.match(/\|\s*(\d+[\.\d]*\s*[KMGT]?i?B\/s)/);
+            if (bytesMatch) bytesTransferred = bytesMatch[1];
+            if (speedMatch) speed = "|" + speedMatch[1];
+            if (match || bytesMatch) {
+              updateProgress();
+            }
+          } else if (line.includes("Total")) {
+            // Show final summary
+            const totalMatch = line.match(/Total\s+(\d+).*reused\s+(\d+)/);
+            if (totalMatch) {
+              process.stdout.write("\x1b[2A");
+              process.stdout.write("\x1b[2K");
+              process.stdout.write(chalk.hex("#7C9EFF")("  │") + " " + chalk.cyan(`✓ Total: ${totalMatch[1]} objects, reused: ${totalMatch[2]}`) + "\n");
+              process.stdout.write(chalk.hex("#7C9EFF")("  │") + " ".repeat(bw - 4) + chalk.hex("#7C9EFF")("│"));
+            }
+          } else if (line.includes("remote:")) {
+            process.stdout.write("\x1b[2A");
+            process.stdout.write("\x1b[2K");
+            process.stdout.write(chalk.hex("#7C9EFF")("  │") + " " + chalk.yellow(line) + "\n");
+            process.stdout.write(chalk.hex("#7C9EFF")("  │") + " ".repeat(bw - 4) + chalk.hex("#7C9EFF")("│"));
+          } else if (line.includes("To ") || line.includes("Branch '")) {
+            process.stdout.write("\x1b[2A");
+            process.stdout.write("\x1b[2K");
+            process.stdout.write(chalk.hex("#7C9EFF")("  │") + " " + chalk.white(line) + "\n");
+            process.stdout.write(chalk.hex("#7C9EFF")("  │") + " ".repeat(bw - 4) + chalk.hex("#7C9EFF")("│"));
           }
         }
       });
