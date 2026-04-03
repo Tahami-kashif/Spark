@@ -6175,6 +6175,26 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
     color: "cyan"
   }).start();
 
+  // Progress animation stages
+  const progressStages = [
+    "Counting objects...",
+    "Compressing objects...",
+    "Writing objects...",
+    "Sending pack data...",
+    "Uploading to GitHub...",
+    "Finalizing packfile...",
+    "Updating references...",
+    "Almost done..."
+  ];
+  let stageIndex = 0;
+
+  // Animate progress stages
+  const progressInterval = setInterval(() => {
+    stageIndex = (stageIndex + 1) % progressStages.length;
+    const dots = ".".repeat((stageIndex % 3) + 1);
+    spinner.text = chalk.hex("#7C9EFF")(`${progressStages[stageIndex]}${dots}`);
+  }, 2000);
+
   try {
     // Get commit count
     let commitCount = 0;
@@ -6187,76 +6207,22 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
 
     spinner.text = chalk.hex("#7C9EFF")(`Pushing ${commitCount} commit(s) to ${currentBranch}...`);
     
-    // Execute push with verbose output to track progress
+    // Execute push and capture full output
     const pushStartTime = Date.now();
-    const pushProcess = spawn("git", ["push", "-u", "origin", currentBranch, "--progress"], {
-      stdio: ["pipe", "pipe", "pipe"]
-    });
-
-    let pushStdout = "";
-    let pushStderr = "";
-    let objectsCount = 0;
-    let bytesSent = 0;
-
-    pushProcess.stdout.on("data", (data) => {
-      const output = data.toString();
-      pushStdout += output;
-      
-      // Parse progress from git output
-      if (output.includes("Writing objects")) {
-        const match = output.match(/(\d+)%/);
-        if (match) {
-          const percent = match[1];
-          spinner.text = chalk.hex("#7C9EFF")(`Uploading: ${percent}% complete`);
-        }
-      }
-    });
-
-    pushProcess.stderr.on("data", (data) => {
-      const output = data.toString();
-      pushStderr += output;
-      
-      // Count objects being pushed
-      const objectMatch = output.match(/Counting objects:\s*(\d+)/);
-      if (objectMatch) {
-        objectsCount = parseInt(objectMatch[1]);
-        spinner.text = chalk.hex("#7C9EFF")(`Processing ${objectsCount} objects...`);
-      }
-      
-      // Track bytes if available
-      const bytesMatch = output.match(/(\d+)\s+bytes/);
-      if (bytesMatch) {
-        bytesSent = parseInt(bytesMatch[1]);
-        spinner.text = chalk.hex("#7C9EFF")(`Sent ${(bytesSent / 1024).toFixed(2)} KB...`);
-      }
-    });
-
-    // Wait for push to complete with timeout
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        pushProcess.kill();
-        reject(new Error("Push timed out after 180 seconds"));
-      }, 180000);
-
-      pushProcess.on("close", (code) => {
-        clearTimeout(timeout);
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`git push exited with code ${code}`));
-        }
+    
+    try {
+      const pushOutput = execSync(`git push -u origin ${currentBranch} 2>&1`, {
+        encoding: "utf8",
+        timeout: 180000,
+        stdio: "pipe",
+        maxBuffer: 10 * 1024 * 1024 // 10MB buffer
       });
 
-      pushProcess.on("error", (err) => {
-        clearTimeout(timeout);
-        reject(err);
-      });
-    });
+      clearInterval(progressInterval);
+      const pushDuration = ((Date.now() - pushStartTime) / 1000).toFixed(2);
+      spinner.succeed(chalk.green("Push complete!"));
 
-    const pushDuration = ((Date.now() - pushStartTime) / 1000).toFixed(2);
-    spinner.succeed(chalk.green("Push complete!"));
-
-    console.log(chalk.green("\n  ✓ Successfully pushed to GitHub!\n"));
+      console.log(chalk.green("\n  ✓ Successfully pushed to GitHub!\n"));
     
     // Show detailed statistics
     console.log(
@@ -6299,6 +6265,52 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
       chalk.hex(COLORS.borderDark)("╯") +
       "\n"
     );
+
+  } catch (innerErr) {
+    // Push failed - show detailed error
+    clearInterval(progressInterval);
+    spinner.fail(chalk.red("Push failed!"));
+    
+    const fullError = innerErr.message || innerErr.stdout || innerErr.stderr || "";
+    const errorLines = fullError.split("\n").filter(l => l.trim());
+    
+    console.log(
+      chalk.hex(COLORS.borderDark)("╭") +
+      chalk.hex(COLORS.errorStart).bold(" ❌ Push Failed ") +
+      chalk.hex(COLORS.errorEnd)("─".repeat(bw - 18)) +
+      chalk.hex(COLORS.borderDark)("╮") +
+      "\n"
+    );
+    
+    // Show last 10 lines of error
+    const recentErrors = errorLines.slice(-10);
+    for (const line of recentErrors) {
+      console.log(chalk.hex(COLORS.borderDark)("│") + `  ${chalk.red(line)}`);
+    }
+    
+    console.log(
+      chalk.hex(COLORS.borderDark)("│") +
+      "\n" +
+      chalk.hex(COLORS.borderDark)("│") +
+      `  Files attempted: ${fileCount}\n` +
+      chalk.hex(COLORS.borderDark)("│") +
+      `  Branch: ${currentBranch}\n` +
+      chalk.hex(COLORS.borderDark)("│") +
+      chalk.hex(COLORS.borderDark)("╰") +
+      chalk.hex(COLORS.errorEnd)("─".repeat(bw)) +
+      chalk.hex(COLORS.borderDark)("╯") +
+      "\n"
+    );
+    
+    // Common error solutions
+    if (fullError.includes("rejected") || fullError.includes("remote error")) {
+      console.log(chalk.yellow("  💡 Tip: Remote may have changes. Try: git pull --rebase origin " + currentBranch + "\n"));
+    } else if (fullError.includes("Authentication") || fullError.includes("authentication")) {
+      console.log(chalk.yellow("  💡 Tip: Authentication failed. Check your token/credentials.\n"));
+    } else if (fullError.includes("Could not resolve") || fullError.includes("not found")) {
+      console.log(chalk.yellow("  💡 Tip: Remote repository URL may be incorrect.\n"));
+    }
+  }
 
   } catch (pushErr) {
     const pushMsg = pushErr.message || pushErr.stdout || "";
