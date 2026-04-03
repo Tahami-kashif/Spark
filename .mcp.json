@@ -1,0 +1,16 @@
+{
+  "servers": {
+    "filesystem": {
+      "command": "node",
+      "args": ["./node_modules/@modelcontextprotocol/server-filesystem/dist/index.js"],
+      "env": {}
+    }
+  },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "GITHUB_TOKEN"
+      }
+    }
+  }
