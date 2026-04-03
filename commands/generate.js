@@ -6202,14 +6202,20 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
 
       let allOutput = "";
       let allError = "";
-      let summaryLines = [];
+      let lineCounter = 0;
+
+      // Show box header BEFORE push starts
+      console.log("");
+      console.log(chalk.hex("#7C9EFF")("  ┌─ Git Push Progress " + "─".repeat(bw - 22) + "┐"));
 
       pushChild.stdout.on("data", (data) => {
         const text = data.toString();
         allOutput += text;
-        // Collect stdout lines
+        // Show stdout lines in real-time
         text.split("\n").filter(l => l.trim()).forEach(line => {
-          summaryLines.push({ text: line, type: "info" });
+          lineCounter++;
+          const lineNum = String(lineCounter).padStart(4);
+          console.log(chalk.hex("#7C9EFF")(`  ${lineNum} │`) + " " + chalk.white(line));
         });
       });
 
@@ -6217,14 +6223,21 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
         const text = data.toString();
         allError += text;
 
-        // Collect all stderr lines
+        // Show stderr lines in real-time
         const lines = text.split("\n").filter(l => l.trim());
         for (const line of lines) {
-          if (line.includes("done.") || line.includes("Total") || line.includes("Delta") || line.includes("remote:") || line.includes("To ") || line.includes("Branch '") || line.includes("POST")) {
-            summaryLines.push({ text: line, type: "done" });
-          } else if (line.includes("%") && (line.includes("100%") || line.includes("Writing"))) {
-            // Only show 100% or Writing progress
-            summaryLines.push({ text: line, type: "progress" });
+          lineCounter++;
+          const lineNum = String(lineCounter).padStart(4);
+          
+          // Color based on line type
+          if (line.includes("done.") || line.includes("Total") || line.includes("remote:") || line.includes("Branch '")) {
+            console.log(chalk.hex("#7C9EFF")(`  ${lineNum} │`) + " " + chalk.green(line));
+          } else if (line.includes("%")) {
+            console.log(chalk.hex("#7C9EFF")(`  ${lineNum} │`) + " " + chalk.cyan(line));
+          } else if (line.includes("POST") || line.includes("Delta")) {
+            console.log(chalk.hex("#7C9EFF")(`  ${lineNum} │`) + " " + chalk.yellow(line));
+          } else {
+            console.log(chalk.hex("#7C9EFF")(`  ${lineNum} │`) + " " + chalk.gray(line));
           }
         }
       });
@@ -6239,43 +6252,26 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
         pushChild.on("close", (code) => {
           clearTimeout(timeout);
           if (code === 0) {
+            // Close the box
+            console.log(chalk.hex("#7C9EFF")("  " + "─".repeat(bw - 1) + "┘"));
+            console.log("");
             resolve();
           } else {
+            console.log(chalk.hex("#7C9EFF")("  " + "─".repeat(bw - 1) + "┘"));
+            console.log("");
             reject(new Error(`git push exited with code ${code}`));
           }
         });
 
         pushChild.on("error", (err) => {
           clearTimeout(timeout);
+          console.log(chalk.hex("#7C9EFF")("  " + "─".repeat(bw - 1) + "┘"));
+          console.log("");
           reject(err);
         });
       });
 
-      // Display clean summary box with proper spacing
       const pushDuration = ((Date.now() - pushStartTime) / 1000).toFixed(2);
-      console.log("");
-      console.log(chalk.hex("#7C9EFF")("  ┌─ Git Push Progress " + "─".repeat(bw - 22) + "┐"));
-      
-      // Show collected summary lines with line numbers
-      if (summaryLines.length === 0) {
-        console.log(chalk.hex("#7C9EFF")("     │") + " " + chalk.yellow("Push completed - no detailed output captured"));
-      } else {
-        summaryLines.forEach((item, idx) => {
-          const lineNum = String(idx + 1).padStart(4);
-          const line = item.text;
-          // Color based on line type
-          if (item.type === "done") {
-            console.log(chalk.hex("#7C9EFF")(`  ${lineNum} │`) + " " + chalk.green(line));
-          } else if (item.type === "progress") {
-            console.log(chalk.hex("#7C9EFF")(`  ${lineNum} │`) + " " + chalk.cyan(line));
-          } else {
-            console.log(chalk.hex("#7C9EFF")(`  ${lineNum} │`) + " " + chalk.white(line));
-          }
-        });
-      }
-      
-      console.log(chalk.hex("#7C9EFF")("  " + "─".repeat(bw - 1) + "┘"));
-      console.log("");
     
     // Show detailed statistics
     console.log(
