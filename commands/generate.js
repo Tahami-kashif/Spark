@@ -6231,37 +6231,23 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
   // Step 6: Push to GitHub
   console.log(chalk.gray("  Pushing to GitHub...\n"));
 
-  // Detect current branch name
-  let currentBranch = "main";
+  // Detect current branch name - default to master
+  let currentBranch = "master";
   try {
     currentBranch = execSync("git rev-parse --abbrev-ref HEAD", { encoding: "utf8", stdio: "pipe" }).trim();
   } catch (e) {
-    currentBranch = "main";
+    currentBranch = "master";
   }
 
-  // Auto-rename master to main if remote uses main (GitHub default)
-  if (currentBranch === "master") {
+  // Always rename to master if on main
+  if (currentBranch === "main") {
+    console.log(chalk.yellow("  ⚠ Renaming 'main' to 'master'...\n"));
     try {
-      // Check if remote has main branch
-      const remoteBranches = execSync("git ls-remote --heads origin 2>&1", { encoding: "utf8", stdio: "pipe" });
-      if (remoteBranches.includes("refs/heads/main") && !remoteBranches.includes("refs/heads/master")) {
-        console.log(chalk.yellow("  ⚠ Remote uses 'main' branch, renaming local 'master' to 'main'...\n"));
-        execSync("git branch -m master main", { stdio: "pipe" });
-        currentBranch = "main";
-        console.log(chalk.green("  ✓ Branch renamed to 'main'\n"));
-      }
-    } catch (e) {
-      // If remote check fails, default to main for new repos
-      if (currentBranch === "master") {
-        console.log(chalk.yellow("  ⚠ Renaming 'master' to 'main' (GitHub standard)...\n"));
-        try {
-          execSync("git branch -m master main", { stdio: "pipe" });
-          currentBranch = "main";
-          console.log(chalk.green("  ✓ Branch renamed to 'main'\n"));
-        } catch (renameErr) {
-          console.log(chalk.yellow(`  ⚠ Could not rename branch: ${renameErr.message}\n`));
-        }
-      }
+      execSync("git branch -m main master", { stdio: "pipe" });
+      currentBranch = "master";
+      console.log(chalk.green("  ✓ Branch renamed to 'master'\n"));
+    } catch (renameErr) {
+      console.log(chalk.yellow(`  ⚠ Could not rename branch: ${renameErr.message}\n`));
     }
   }
 
