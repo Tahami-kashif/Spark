@@ -6203,28 +6203,33 @@ if (githubPushPatterns.some(pattern => pattern.test(lowerPrompt))) {
 
       let allOutput = "";
       let allError = "";
-      let lastProgressLine = "";
 
       pushChild.stdout.on("data", (data) => {
         const text = data.toString();
         allOutput += text;
+        // Show all stdout lines
+        text.split("\n").filter(l => l.trim()).forEach(line => {
+          process.stdout.write(chalk.hex("#7C9EFF")("  │") + " " + chalk.cyan(line) + "\n");
+        });
       });
 
       pushChild.stderr.on("data", (data) => {
         const text = data.toString();
         allError += text;
         
-        // Only show progress lines, update in place
+        // Show all stderr (progress) lines - this is where git shows real progress
         const lines = text.split("\n").filter(l => l.trim());
         for (const line of lines) {
-          // Only track progress lines with percentages or key info
-          if (line.includes("%") || line.includes("done.") || line.includes("POST") || line.includes("Total") || line.includes("Delta") || line.includes("remote:")) {
-            lastProgressLine = line;
-            // Clear line and update
-            process.stdout.write("\r" + chalk.hex("#7C9EFF")("  │") + " " + chalk.green(line.padEnd(bw - 5)));
-          } else if (line.includes("To ") || line.includes("Branch '")) {
-            // Show final info lines
-            process.stdout.write("\n" + chalk.hex("#7C9EFF")("  │") + " " + chalk.cyan(line));
+          // Show all progress lines clearly
+          if (line.includes("%")) {
+            // Progress lines with percentage - show in green
+            process.stdout.write(chalk.hex("#7C9EFF")("  │") + " " + chalk.green(line) + "\n");
+          } else if (line.includes("done.") || line.includes("POST") || line.includes("Total") || line.includes("Delta") || line.includes("remote:")) {
+            // Important info lines - show in cyan
+            process.stdout.write(chalk.hex("#7C9EFF")("  │") + " " + chalk.cyan(line) + "\n");
+          } else {
+            // Other lines - show in yellow
+            process.stdout.write(chalk.hex("#7C9EFF")("  │") + " " + chalk.yellow(line) + "\n");
           }
         }
       });
